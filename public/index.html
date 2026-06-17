@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>One Million CheckBoxes</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap');
+
+        :root {
+            --bg-start: #0f172a;
+            --bg-end: #1e1b4b;
+            --accent-primary: #818cf8;
+            --accent-secondary: #c084fc;
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.08);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: linear-gradient(135deg, var(--bg-start), var(--bg-end));
+            background-attachment: fixed;
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 3rem 1rem;
+            overflow-x: hidden;
+        }
+
+        h1 {
+            font-size: 4rem;
+            font-weight: 900;
+            margin-bottom: 2rem;
+            text-align: center;
+            letter-spacing: -1px;
+            background: linear-gradient(to right, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 15px rgba(129, 140, 248, 0.3));
+        }
+
+        #container {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 2.5rem;
+            max-width: 95vw;
+            width: 1200px;
+            text-align: center;
+            line-height: 1.8;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+
+        input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            margin: 2px 4px;
+            cursor: pointer;
+            accent-color: var(--accent-primary);
+            opacity: 0.8;
+            transition: all 0.2s ease;
+        }
+
+        input[type="checkbox"]:hover {
+            opacity: 1;
+            transform: scale(1.3);
+            z-index: 10;
+            position: relative;
+        }
+
+        input[type="checkbox"]:checked {
+            opacity: 1;
+            filter: drop-shadow(0 0 8px var(--accent-primary));
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2.5rem;
+            }
+
+            #container {
+                padding: 1.5rem;
+            }
+
+            input[type="checkbox"] {
+                width: 14px;
+                height: 14px;
+                margin: 2px;
+            }
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: rgba(239, 68, 68, 0.95);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            color: white;
+            padding: 1rem 2rem;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(239, 68, 68, 0.4);
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            z-index: 1000;
+            pointer-events: none;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>CheckBoxes</h1>
+    <div id="container">
+
+    </div>
+    <div id="toast" class="toast"></div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+
+        const container = document.getElementById('container');
+        const CHECKBOX_COUNT = 100;
+
+        async function fetchFromServer() {
+            while (container.firstChild) {
+                container.removeChild(container.firstChild);
+            }
+            const response = await fetch('/checkboxes', { method: 'GET' });
+            const data = await response.json();
+            if (data && data.checkboxes) {
+                data.checkboxes.forEach((serverValue, index) => {
+                    const input = document.createElement('input');
+                    input.type = 'checkbox'
+                    input.id = `checkbox-${index}`
+                    input.checked = serverValue;
+
+                    input.addEventListener('change', event => {
+                        const checked = event.target.checked;
+
+                        // Prevent changes if UI is locked
+                        if (isLocked) {
+                            event.target.checked = !checked;
+                            return;
+                        }
+
+                        console.log('Checkbox Changed', { index, checked })
+                        socket.emit('client:checkbox:change', { index, checked })
+                        fetchFromServer();
+
+
+                    });
+                    container.appendChild(input)
+
+                }
+                )
+
+            }
+        }
+        let isLocked = false;
+        let lockTimeout = null;
+
+        socket.on('server:error', (data) => {
+            const errorMessage = data.error;
+            const toast = document.getElementById('toast');
+            toast.textContent = errorMessage;
+            toast.classList.add('show');
+
+            // Lock the UI for 5 seconds
+            isLocked = true;
+            container.style.pointerEvents = 'none';
+            container.style.opacity = '0.5';
+
+            if (lockTimeout) clearTimeout(lockTimeout);
+            lockTimeout = setTimeout(() => {
+                isLocked = false;
+                container.style.pointerEvents = 'auto';
+                container.style.opacity = '1';
+            }, 5000);
+
+            if (window.toastTimeout) clearTimeout(window.toastTimeout);
+
+            window.toastTimeout = setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        })
+
+        socket.on('server:checkbox:change', (data) => {
+            console.log(`Socket Server Event`, data)
+            const { index, checked } = data;
+
+            const input = document.getElementById(`checkbox-${index}`);
+            if (input) {
+                input.checked = checked
+            }
+        })
+
+        window.addEventListener('load', fetchFromServer)
+
+    </script>
+</body>
+
+</html>
